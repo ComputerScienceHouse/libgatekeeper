@@ -5,7 +5,7 @@ set(LIBRARY_SOURCES
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${GATEKEEPER_INCLUDE_DIRS})
 
-add_library(gatekeeper SHARED ${LIBRARY_SOURCES})
+add_library(gatekeeper STATIC ${LIBRARY_SOURCES})
 
 # Define headers
 target_include_directories(gatekeeper PUBLIC

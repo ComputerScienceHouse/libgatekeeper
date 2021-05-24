@@ -15,6 +15,8 @@ set(PACKAGE_STRING "${PACKAGE_NAME} ${PACKAGE_VERSION}")
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
 
+option(BUILD_EXAMPLES "Build examples" ON)
+
 # Library install locations for all platforms
 include(GNUInstallDirs)
 
@@ -39,5 +41,7 @@ set(GATEKEEPER_INCLUDE_DIRS
 # Library
 add_subdirectory(libgatekeeper)
 
-# Examples
-add_subdirectory(examples)
+if (BUILD_EXAMPLES)
+  # Examples
+  add_subdirectory(examples)
+endif()

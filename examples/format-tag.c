@@ -52,7 +52,7 @@ int main(int argc, const char *argv[]) {
         MifareTag tag = tags[i];
 
         switch (freefare_get_tag_type(tag)) {
-            case DESFIRE:
+            case MIFARE_DESFIRE:
                 break;
             default:
                 continue;

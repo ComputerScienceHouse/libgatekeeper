@@ -1,6 +1,7 @@
 #ifndef CRYPTO_H
 #define CRYPTO_H
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <openssl/crypto.h>
 #include <uuid/uuid.h>

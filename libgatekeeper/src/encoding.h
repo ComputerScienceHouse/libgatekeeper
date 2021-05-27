@@ -1,6 +1,8 @@
 #ifndef ENCODING_H
 #define ENCODING_H
 
+#include <stdint.h>
+
 EVP_PKEY *gk_decode_public_key(char *public_key);
 
 EVP_PKEY *gk_decode_private_key(char *private_key);

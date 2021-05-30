@@ -19,7 +19,6 @@
 #define GK_MASTER_AID 0x0
 #define GK_BASE_AID 0xff77f0
 
-#define GK_ASSOCIATION_LENGTH 37
 #define GK_READ_PADDING (2*16 + 1)
 
 #define GK_DES_KEY_LENGTH 8
@@ -487,7 +486,7 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
     return retval;
 }
 
-size_t authenticate_tag(MifareTag tag, realm_t *realm) {
+size_t authenticate_tag(MifareTag tag, realm_t *realm, char* association_id[GK_ASSOCIATION_LENGTH]) {
     int r, retval = 0;
     int app_id = GK_BASE_AID + realm->slot;
     MifareDESFireAID aid = mifare_desfire_aid_new(app_id);
@@ -504,7 +503,7 @@ size_t authenticate_tag(MifareTag tag, realm_t *realm) {
      */
     char association_buf[GK_ASSOCIATION_LENGTH + GK_READ_PADDING];
     unsigned char signature_buf [EVP_PKEY_size(realm->keys->public) + GK_READ_PADDING];
-    char association_id[GK_ASSOCIATION_LENGTH];
+    /* char association_id[GK_ASSOCIATION_LENGTH]; */
     unsigned char *signature = NULL; // Allocate this dynamically after reading length
 
     warnx("=== Authenticate Tag ===");

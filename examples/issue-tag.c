@@ -85,7 +85,9 @@ int main(int argc, const char *argv[]) {
         // Successfully issued tag
         warnx("Successfully issued tag!");
 
-        if(authenticate_tag(tag, realms[0])) {
+        char association_id[GK_ASSOCIATION_LENGTH];
+
+        if(authenticate_tag(tag, realms[0], &association_id)) {
             warnx("Tag authenticates!");
         } else {
             warnx("Tag failed authentication.");

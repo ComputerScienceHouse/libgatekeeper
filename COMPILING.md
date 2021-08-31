@@ -9,6 +9,9 @@ cmake -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl@1.1 ..
 
 ```
 
+## libnfc
+libgatekeeper must be compiled with the latest tagged release of [libnfc](https://github.com/nfc-tools/libnfc/releases/tag/libnfc-1.8.0)
+
 ### USB-to-UART
 Using a UART PN532 breakout with a USB-to-UART converter?
 Install the appropriate driver (check System Profiler for the device manufacturer):

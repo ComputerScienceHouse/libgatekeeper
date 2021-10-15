@@ -1,3 +1,22 @@
+## Linux
+
+1. Grab the tarball for [libfreefare-0.4.0](https://github.com/nfc-tools/libfreefare/releases/tag/libfreefare-0.4.0)
+2. Grab [libnfc 1.8.0](https://github.com/nfc-tools/libnfc/releases/download/libnfc-1.8.0/libnfc-1.8.0.tar.bz2)
+3. Build them, weenie
+4. Download and install `libgatekeeper`
+5. Clone `gatekeeper-door`
+8. Build door: `cargo build`
+6. Generate secrets: `python generate-creds.py >> .env`
+7. Load 'em: `source .env`
+9. Clone `gatekeeper-mqtt`
+10. Install deps: `pnpm i`
+15. Install mongodb
+11. Run the server: `node server.js`
+16. Format your key (`./examples/format-tag` in `libgatekeeper`)
+12. Enroll a new key: `cargo run --bin enroll pn532_uart:/dev/ttyUSB0`
+13. Run the door: `cargo run --bin gatekeeper pn532_uart:/dev/ttyUSB0`
+14. Try harold! You should just be able to `cargo run`
+
 ## macOS
 
 ```sh

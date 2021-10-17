@@ -19,11 +19,12 @@
 #define GK_MASTER_AID 0x0
 #define GK_BASE_AID 0xff77f0
 
-#define GK_ASSOCIATION_LENGTH 37
 #define GK_READ_PADDING (2*16 + 1)
 
 #define GK_DES_KEY_LENGTH 8
 #define GK_AES_KEY_LENGTH 16
+
+#define PICC_ERR_LOG(tag) warnx("PICC replied %s", freefare_strerror(tag))
 
 static unsigned char GK_DEFAULT_DES_KEY[GK_DES_KEY_LENGTH] = { 0x0 };
 static unsigned char GK_DEFAULT_AES_KEY[GK_AES_KEY_LENGTH] = { 0x0 };
@@ -182,19 +183,49 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
     int r;
     int retval = EXIT_FAILURE;
 
+    tag_data_t *td = NULL;
+
     MifareDESFireKey default_desfire_des_key = mifare_desfire_des_key_new(GK_DEFAULT_DES_KEY);
     MifareDESFireKey default_desfire_aes_key = mifare_desfire_aes_key_new(GK_DEFAULT_AES_KEY);
+
+    uint8_t connected = 0;
 
     r = mifare_desfire_connect(tag);
     if (r < 0) {
         // Failed to connect to tag
-        return 4;
+        warnx("issue_tag: failed to connect to tag");
+        PICC_ERR_LOG(tag);
+        goto abort;
+    }
+    connected = 1;
+
+    // Make sure we don't have anything on tag already; format tag
+    r = mifare_desfire_select_application(tag, NULL);
+    if (r < 0) {
+        warnx("issue_tag: failed to select master application");
+        PICC_ERR_LOG(tag);
+        goto abort;
+    }
+
+    r = mifare_desfire_authenticate(tag, 0x0, default_desfire_des_key);
+    if (r < 0) {
+        warnx("issue_tag: failed to authenticate to tag");
+        PICC_ERR_LOG(tag);
+        goto abort;
+    }
+    
+    r = mifare_desfire_format_picc(tag);
+    if (r < 0) {
+        warnx("issue_tag: failed to format tag");
+        PICC_ERR_LOG(tag);
+        goto abort;
     }
 
     struct mifare_desfire_version_info version_info;
     r = mifare_desfire_get_version(tag, &version_info);
     if (r < 0) {
         // Failed to retrieve tag version information
+        PICC_ERR_LOG(tag);
         goto abort;
     }
 
@@ -205,7 +236,7 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
     }
 
     char *tag_uid = freefare_get_tag_uid(tag);
-    tag_data_t *td = tag_data_create(tag_uid, num_realms);
+    td = tag_data_create(tag_uid, num_realms);
     free(tag_uid);
 
     warnx("Tag UID: %s", td->uid);
@@ -280,6 +311,7 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
         r = mifare_desfire_select_application(tag, NULL);
         if (r < 0) {
             warnx("issue_tag: failed to select master application");
+            PICC_ERR_LOG(tag);
             goto abort_keys;
         }
 
@@ -287,6 +319,7 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
         r = mifare_desfire_authenticate(tag, GK_MASTER_AID, default_desfire_des_key);
         if (r < 0) {
             warnx("issue_tag: failed to authenticate to tag");
+            PICC_ERR_LOG(tag);
             goto abort_keys;
         }
 
@@ -294,6 +327,7 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
         r = mifare_desfire_create_application_aes(tag, aid, GK_INITIAL_APPLICATION_SETTINGS, 4);
         if (r < 0) {
             warnx("issue_tag: failed to create application");
+            PICC_ERR_LOG(tag);
             goto abort_keys;
         }
 
@@ -301,6 +335,7 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
         r = mifare_desfire_select_application(tag, aid);
         if (r < 0) {
             warnx("issue_tag: failed to select application");
+            PICC_ERR_LOG(tag);
             goto abort_keys;
         }
 
@@ -308,6 +343,7 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
         r = mifare_desfire_authenticate(tag, 0, default_desfire_aes_key);
         if (r < 0) {
             warnx("issue_tag: failed to authenticate to application");
+            PICC_ERR_LOG(tag);
             goto abort_keys;
         }
         
@@ -315,18 +351,21 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
         r = mifare_desfire_change_key(tag, 1, read_key, default_desfire_aes_key);
         if (r < 0) {
             warnx("issue_tag: failed to change application read key");
+            PICC_ERR_LOG(tag);
             goto abort_keys;
         }
 
         r = mifare_desfire_change_key(tag, 2, auth_key, default_desfire_aes_key);
         if (r < 0) {
             warnx("issue_tag: failed to change application auth key");
+            PICC_ERR_LOG(tag);
             goto abort_keys;
         }
 
         r = mifare_desfire_change_key(tag, 3, update_key, default_desfire_aes_key);
         if (r < 0) {
             warnx("issue_tag: failed to change application update key");
+            PICC_ERR_LOG(tag);
             goto abort_keys;
         }
 
@@ -334,12 +373,14 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
         r = mifare_desfire_create_std_data_file(tag, 1, MDCM_ENCIPHERED, GK_INITIAL_FILE_SETTINGS, GK_ASSOCIATION_LENGTH);
         if (r < 0) {
             warnx("issue_tag: failed to create association data file");
+            PICC_ERR_LOG(tag);
             goto abort_keys;
         }
 
         r = mifare_desfire_write_data_ex(tag, 1, 0, GK_ASSOCIATION_LENGTH, realms[realm]->association_id, MDCM_ENCIPHERED);
         if (r < 0) {
             warnx("issue_tag: failed to write association");
+            PICC_ERR_LOG(tag);
             goto abort_keys;
         }
 
@@ -347,6 +388,7 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
         r = mifare_desfire_create_std_data_file(tag, 2, MDCM_ENCIPHERED, GK_INITIAL_FILE_SETTINGS, 4 + sig_length);
         if (r < 0) {
             warnx("issue_tag: failed to create signature data file");
+            PICC_ERR_LOG(tag);
             goto abort_keys;
         }
 
@@ -359,12 +401,14 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
         r = mifare_desfire_write_data_ex(tag, 2, 0, 4, sig_len_bytes, MDCM_ENCIPHERED);
         if (r < 0) {
             warnx("issue_tag: failed to write signature length");
+            PICC_ERR_LOG(tag);
             goto abort_keys;
         }
 
         r = mifare_desfire_write_data_ex(tag, 2, 4, sig_length, sig, MDCM_ENCIPHERED);
         if (r < 0) {
             warnx("issue_tag: failed to write signature");
+            PICC_ERR_LOG(tag);
             goto abort_keys;
         }
 
@@ -372,12 +416,14 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
         r = mifare_desfire_change_file_settings(tag, 1, MDCM_ENCIPHERED, GK_ASSOCIATION_FILE_SETTINGS);
         if (r < 0) {
             warnx("issue_tag: failed to change association file settings");
+            PICC_ERR_LOG(tag);
             goto abort_keys;
         }
 
         r = mifare_desfire_change_file_settings(tag, 2, MDCM_ENCIPHERED, GK_SIGNATURE_FILE_SETTINGS);
         if (r < 0) {
             warnx("issue_tag: failed to change signature file settings");
+            PICC_ERR_LOG(tag);
             goto abort_keys;
         }
 
@@ -385,6 +431,7 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
         r = mifare_desfire_change_key(tag, 0, master_key, default_desfire_des_key);
         if (r < 0) {
             warnx("issue_tag: failed to change application master key");
+            PICC_ERR_LOG(tag);
             goto abort_keys;
         }
 
@@ -392,6 +439,7 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
         r = mifare_desfire_authenticate(tag, 0, master_key);
         if (r < 0) {
             warnx("issue_tag: failed to re-authenticate to application");
+            PICC_ERR_LOG(tag);
             goto abort_keys;
         }
 
@@ -399,6 +447,7 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
         r = mifare_desfire_change_key_settings(tag, GK_FINAL_APPLICATION_SETTINGS);
         if (r < 0) {
             warnx("issue_tag: failed to change application settings");
+            PICC_ERR_LOG(tag);
             goto abort_keys;
         }
 
@@ -428,6 +477,7 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
     r = mifare_desfire_select_application(tag, NULL);
     if (r < 0) {
         warnx("issue_tag: failed to select master application");
+        PICC_ERR_LOG(tag);
         goto abort;
     }
 
@@ -435,6 +485,7 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
     r = mifare_desfire_authenticate(tag, 0, default_desfire_des_key);
     if (r < 0) {
         warnx("issue_tag: failed to authenticate to tag");
+        PICC_ERR_LOG(tag);
         goto abort;
     }
 
@@ -442,6 +493,7 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
     r = mifare_desfire_change_key_settings(tag, GK_INITIAL_PICC_SETTINGS);
     if (r < 0) {
         warnx("issue_tag: failed to change tag key settings");
+        PICC_ERR_LOG(tag);
         goto abort;
     }
 
@@ -481,13 +533,13 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
     if (picc_master_key != NULL) mifare_desfire_key_free(picc_master_key);
     mifare_desfire_key_free(default_desfire_des_key);
     mifare_desfire_key_free(default_desfire_aes_key);
-    mifare_desfire_disconnect(tag);
-    tag_data_free(td);
+    if (connected) mifare_desfire_disconnect(tag);
+    if (td != NULL) tag_data_free(td);
 
     return retval;
 }
 
-size_t authenticate_tag(MifareTag tag, realm_t *realm) {
+size_t authenticate_tag(MifareTag tag, realm_t *realm, char* association_id[GK_ASSOCIATION_LENGTH]) {
     int r, retval = 0;
     int app_id = GK_BASE_AID + realm->slot;
     MifareDESFireAID aid = mifare_desfire_aid_new(app_id);
@@ -504,7 +556,7 @@ size_t authenticate_tag(MifareTag tag, realm_t *realm) {
      */
     char association_buf[GK_ASSOCIATION_LENGTH + GK_READ_PADDING];
     unsigned char signature_buf [EVP_PKEY_size(realm->keys->public) + GK_READ_PADDING];
-    char association_id[GK_ASSOCIATION_LENGTH];
+    /* char association_id[GK_ASSOCIATION_LENGTH]; */
     unsigned char *signature = NULL; // Allocate this dynamically after reading length
 
     warnx("=== Authenticate Tag ===");
@@ -600,14 +652,14 @@ size_t authenticate_tag(MifareTag tag, realm_t *realm) {
     mifare_desfire_disconnect(tag);
 
     abort:
-//    free(read_key);
-//    free(auth_key);
+    free(read_key);
+    free(auth_key);
 //    free(association_buf);
 //    free(signature_buf);
 //    free(association_id);
-//    if (signature != NULL) free(signature);
-//    if (desfire_read_key != NULL) mifare_desfire_key_free(desfire_read_key);
-//    if (desfire_auth_key != NULL) mifare_desfire_key_free(desfire_auth_key);
+    if (signature != NULL) free(signature);
+    if (desfire_read_key != NULL) mifare_desfire_key_free(desfire_read_key);
+    if (desfire_auth_key != NULL) mifare_desfire_key_free(desfire_auth_key);
 
     return retval;
 }

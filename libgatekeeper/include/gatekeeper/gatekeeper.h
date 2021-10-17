@@ -5,6 +5,8 @@
 #include <freefare.h>
 #include <openssl/pem.h>
 
+#define GK_ASSOCIATION_LENGTH 37
+
 typedef struct RealmKeys {
     char *auth;
     char *read;
@@ -27,6 +29,6 @@ void realm_free(realm_t *realm);
 
 int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_realms);
 
-size_t authenticate_tag(MifareTag tag, realm_t *realm);
+size_t authenticate_tag(MifareTag tag, realm_t *realm, char* association_id[GK_ASSOCIATION_LENGTH]);
 
 #endif //GATEKEEPER_H

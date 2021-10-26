@@ -189,6 +189,53 @@ void print_key(char *label, unsigned char *key, int key_len) {
     free(key_str);
 }
 
+int format_tag(MifareTag tag) {
+    int r;
+    int retval = EXIT_FAILURE;
+
+    MifareDESFireKey default_desfire_des_key = mifare_desfire_des_key_new(GK_DEFAULT_DES_KEY);
+
+    uint8_t connected = 0;
+
+    r = mifare_desfire_connect(tag);
+    if (r < 0) {
+        // Failed to connect to tag
+        debug_log("issue_tag: failed to connect to tag");
+        PICC_ERR_LOG(tag);
+        goto abort;
+    }
+    connected = 1;
+
+    r = mifare_desfire_select_application(tag, NULL);
+    if (r < 0) {
+        debug_log("format_tag: failed to select master application");
+        PICC_ERR_LOG(tag);
+        goto abort;
+    }
+
+    r = mifare_desfire_authenticate(tag, 0x0, default_desfire_des_key);
+    if (r < 0) {
+        debug_log("format_tag: failed to authenticate to tag");
+        PICC_ERR_LOG(tag);
+        goto abort;
+    }
+
+    r = mifare_desfire_format_picc(tag);
+    if (r < 0) {
+        debug_log("format_tag: failed to format tag");
+        PICC_ERR_LOG(tag);
+        goto abort;
+    }
+
+    retval = 0;
+
+    abort:
+    mifare_desfire_key_free(default_desfire_des_key);
+    if (connected) mifare_desfire_disconnect(tag);
+
+    return retval;
+}
+
 int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_realms) {
     int r;
     int retval = EXIT_FAILURE;

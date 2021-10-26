@@ -27,6 +27,8 @@ realm_t *realm_create(uint8_t slot, char *name, char *associationId, char *auth_
 
 void realm_free(realm_t *realm);
 
+int format_tag(MifareTag tag);
+
 int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_realms);
 
 size_t authenticate_tag(MifareTag tag, realm_t *realm, char* association_id[GK_ASSOCIATION_LENGTH]);

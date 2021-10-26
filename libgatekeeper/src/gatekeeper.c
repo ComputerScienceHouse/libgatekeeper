@@ -209,28 +209,6 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
     }
     connected = 1;
 
-    // Make sure we don't have anything on tag already; format tag
-    r = mifare_desfire_select_application(tag, NULL);
-    if (r < 0) {
-        debug_log("issue_tag: failed to select master application");
-        PICC_ERR_LOG(tag);
-        goto abort;
-    }
-
-    r = mifare_desfire_authenticate(tag, 0x0, default_desfire_des_key);
-    if (r < 0) {
-        debug_log("issue_tag: failed to authenticate to tag");
-        PICC_ERR_LOG(tag);
-        goto abort;
-    }
-    
-    r = mifare_desfire_format_picc(tag);
-    if (r < 0) {
-        debug_log("issue_tag: failed to format tag");
-        PICC_ERR_LOG(tag);
-        goto abort;
-    }
-
     struct mifare_desfire_version_info version_info;
     r = mifare_desfire_get_version(tag, &version_info);
     if (r < 0) {

@@ -6,6 +6,8 @@
 #include <nfc/nfc-types.h>
 #include <freefare.h>
 
+#include <gatekeeper/gatekeeper.h>
+
 static unsigned char GK_DEFAULT_DESFIRE_KEY[8] = { 0x0 };
 
 int main(int argc, const char *argv[]) {
@@ -62,38 +64,7 @@ int main(int argc, const char *argv[]) {
         printf("Tag with UID %s is a %s\n", tag_uid, freefare_get_tag_friendly_name(tag));
         free(tag_uid);
 
-        int r;
-
-        r = mifare_desfire_connect(tag);
-        if (r < 0) {
-            warnx("format-tag: failed to connect to tag");
-            goto abort_tags;
-        }
-
-        r = mifare_desfire_select_application(tag, NULL);
-        if (r < 0) {
-            warnx("format-tag: failed to select master application");
-            goto abort_disconnect;
-        }
-
-        r = mifare_desfire_authenticate(tag, 0x0, default_desfire_key);
-        if (r < 0) {
-            warnx("format-tag: failed to authenticate to tag");
-            goto abort_disconnect;
-        }
-
-        r = mifare_desfire_format_picc(tag);
-        if (r < 0) {
-            warnx("format-tag: failed to format tag");
-            goto abort_disconnect;
-        }
-
-        mifare_desfire_disconnect(tag);
-        printf("Successfully formatted tag!\n");
-
-        abort_disconnect:
-        mifare_desfire_disconnect(tag);
-        goto abort_tags;
+        format_tag(tag);
     }
 
     abort_tags:

@@ -1,6 +1,7 @@
 SET(EXAMPLES_SOURCES
         issue-tag
-        format-tag)
+        format-tag
+        read-tag)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${GATEKEEPER_INCLUDE_DIRS})
 

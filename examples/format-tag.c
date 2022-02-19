@@ -26,6 +26,7 @@ int main(int argc, const char *argv[]) {
 
     nfc_context *context;
     nfc_init(&context);
+    char *tag_uid = 0;
 
     if (context == NULL) {
         errx(EXIT_FAILURE, "Unable to init libnfc (malloc)");
@@ -60,11 +61,15 @@ int main(int argc, const char *argv[]) {
                 continue;
         }
 
-        char *tag_uid = freefare_get_tag_uid(tag);
+        tag_uid = freefare_get_tag_uid(tag);
         printf("Tag with UID %s is a %s\n", tag_uid, freefare_get_tag_friendly_name(tag));
-        free(tag_uid);
 
-        format_tag(tag);
+        if(format_tag(tag, /*"047b4e92d65c80", "64d4b8c1960a49986f486c5ea520c975"*/ NULL, NULL) != EXIT_SUCCESS) {
+            fprintf(stderr, "Dude what the fuck why my format not working :(\n");
+        }
+        printf("In theory we're ok?");
+        free(tag_uid);
+        tag_uid = 0;
     }
 
     abort_tags:

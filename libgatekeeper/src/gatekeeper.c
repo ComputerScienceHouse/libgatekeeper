@@ -189,11 +189,26 @@ void print_key(char *label, unsigned char *key, int key_len) {
     free(key_str);
 }
 
-int format_tag(MifareTag tag) {
+int format_tag(MifareTag tag, char* uid, char *system_secret) {
     int r;
     int retval = EXIT_FAILURE;
 
-    MifareDESFireKey default_desfire_des_key = mifare_desfire_des_key_new(GK_DEFAULT_DES_KEY);
+    MifareDESFireKey master_key = 0;
+    if (uid) {
+        unsigned char* derived_str;
+        // Derive PICC master key
+        r = gk_kdf(system_secret, GK_MASTER_AID, 0, uid, GK_AES_KEY_LENGTH, &derived_str);
+        if (r < 0) {
+            // Failed to derive PICC master key
+            goto abort;
+        }
+        master_key = mifare_desfire_aes_key_new(derived_str);
+        free(derived_str);
+        debug_log("Using derived key (@%lx) for %s!", uid, uid);
+    } else {
+        master_key = mifare_desfire_des_key_new(GK_DEFAULT_DES_KEY);
+        debug_log("Using default key!");
+    }
 
     uint8_t connected = 0;
 
@@ -213,7 +228,7 @@ int format_tag(MifareTag tag) {
         goto abort;
     }
 
-    r = mifare_desfire_authenticate(tag, 0x0, default_desfire_des_key);
+    r = mifare_desfire_authenticate(tag, 0x0, master_key);
     if (r < 0) {
         debug_log("format_tag: failed to authenticate to tag");
         PICC_ERR_LOG(tag);
@@ -230,19 +245,33 @@ int format_tag(MifareTag tag) {
     retval = 0;
 
     abort:
-    mifare_desfire_key_free(default_desfire_des_key);
+    if (master_key) mifare_desfire_key_free(master_key);
     if (connected) mifare_desfire_disconnect(tag);
 
     return retval;
 }
 
-int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_realms) {
+int issue_tag(MifareTag tag, char *system_secret, char* uid, realm_t **realms, size_t num_realms) {
     int r;
     int retval = EXIT_FAILURE;
 
     tag_data_t *td = NULL;
+    MifareDESFireKey picc_master_key = NULL;
 
-    MifareDESFireKey default_desfire_des_key = mifare_desfire_des_key_new(GK_DEFAULT_DES_KEY);
+    MifareDESFireKey current_master_key = 0;
+    if (uid) {
+        unsigned char* derived_str;
+        // Derive PICC master key
+        r = gk_kdf(system_secret, GK_MASTER_AID, 0, uid, GK_AES_KEY_LENGTH, &derived_str);
+        if (r < 0) {
+            // Failed to derive PICC master key
+            goto abort;
+        }
+        current_master_key = mifare_desfire_aes_key_new(derived_str);
+        free(derived_str);
+    } else {
+        current_master_key = mifare_desfire_des_key_new(GK_DEFAULT_DES_KEY);
+    }
     MifareDESFireKey default_desfire_aes_key = mifare_desfire_aes_key_new(GK_DEFAULT_AES_KEY);
 
     uint8_t connected = 0;
@@ -256,24 +285,29 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
     }
     connected = 1;
 
-    struct mifare_desfire_version_info version_info;
-    r = mifare_desfire_get_version(tag, &version_info);
-    if (r < 0) {
-        // Failed to retrieve tag version information
-        PICC_ERR_LOG(tag);
-        goto abort;
+    if (!uid) {
+        struct mifare_desfire_version_info version_info;
+        r = mifare_desfire_get_version(tag, &version_info);
+        if (r < 0) {
+            // Failed to retrieve tag version information
+            PICC_ERR_LOG(tag);
+            goto abort;
+        }
+
+        uint8_t zero_uid[7] = {0};
+        if (memcmp(version_info.uid, zero_uid, sizeof(zero_uid)) == 0) {
+            // Unsupported tag: random UID is already enabled
+            goto abort;
+        }
+
+        char *tag_uid = freefare_get_tag_uid(tag);
+        td = tag_data_create(tag_uid, num_realms);
+        free(tag_uid);
+
+    } else {
+        debug_log("(Tag already has random UID)");
+        td = tag_data_create(uid, num_realms);
     }
-
-    uint8_t zero_uid[7] = {0};
-    if (memcmp(version_info.uid, zero_uid, sizeof(zero_uid)) == 0) {
-        // Unsupported tag: random UID is already enabled
-        goto abort;
-    }
-
-    char *tag_uid = freefare_get_tag_uid(tag);
-    td = tag_data_create(tag_uid, num_realms);
-    free(tag_uid);
-
     debug_log("Tag UID: %s", td->uid);
 
     for (size_t realm = 0; realm < num_realms; realm++) {
@@ -351,7 +385,7 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
         }
 
         // Authenticate to tag
-        r = mifare_desfire_authenticate(tag, GK_MASTER_AID, default_desfire_des_key);
+        r = mifare_desfire_authenticate(tag, GK_MASTER_AID, current_master_key);
         if (r < 0) {
             debug_log("issue_tag: failed to authenticate to tag");
             PICC_ERR_LOG(tag);
@@ -463,7 +497,7 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
         }
 
         // Change application master key
-        r = mifare_desfire_change_key(tag, 0, master_key, default_desfire_des_key);
+        r = mifare_desfire_change_key(tag, 0, master_key, current_master_key);
         if (r < 0) {
             debug_log("issue_tag: failed to change application master key");
             PICC_ERR_LOG(tag);
@@ -496,77 +530,80 @@ int issue_tag(MifareTag tag, char *system_secret, realm_t **realms, size_t num_r
         OPENSSL_free(sig);
     }
 
-    debug_log("=== Tag Configuration ===");
+    // Presence of UID indicates we already set a master key (re-issuing)
+    if (!uid) {
+        debug_log("=== Tag Configuration ===");
 
-    // Derive PICC master key
-    r = gk_kdf(system_secret, GK_MASTER_AID, 0, td->uid, GK_AES_KEY_LENGTH, &td->picc_master_key);
-    if (r < 0) {
-        // Failed to derive PICC master key
-        goto abort;
+        // Derive PICC master key
+        r = gk_kdf(system_secret, GK_MASTER_AID, 0, td->uid, GK_AES_KEY_LENGTH, &td->picc_master_key);
+        if (r < 0) {
+            // Failed to derive PICC master key
+            goto abort;
+        }
+
+        picc_master_key = mifare_desfire_aes_key_new(td->picc_master_key);
+        print_key("PICC Master Key", td->picc_master_key, r);
+
+        // Switch back to master application
+        r = mifare_desfire_select_application(tag, NULL);
+        if (r < 0) {
+            debug_log("issue_tag: failed to select master application");
+            PICC_ERR_LOG(tag);
+            goto abort;
+        }
+
+        // Authenticate to tag
+        r = mifare_desfire_authenticate(tag, 0, current_master_key);
+        if (r < 0) {
+            debug_log("issue_tag: failed to authenticate to tag");
+            PICC_ERR_LOG(tag);
+            goto abort;
+        }
+
+        // Change key settings to allow us to change the PICC master key
+        r = mifare_desfire_change_key_settings(tag, GK_INITIAL_PICC_SETTINGS);
+        if (r < 0) {
+            debug_log("issue_tag: failed to change tag key settings");
+            PICC_ERR_LOG(tag);
+            goto abort;
+        }
+
+        // TODO: Must save real tag UID or we won't be able to re-derive PICC master key
+
+        // Change PICC master key
+        r = mifare_desfire_change_key(tag, 0, picc_master_key, current_master_key);
+        if (r < 0) {
+            debug_log("issue_tag: failed to change PICC master key");
+            goto abort;
+        }
+
+        // Re-authenticate to target
+        r = mifare_desfire_authenticate(tag, 0, picc_master_key);
+        if (r < 0) {
+            debug_log("issue_tag: failed to re-authenticate to tag");
+            goto abort;
+        }
+
+        // Apply the final key settings
+        r = mifare_desfire_change_key_settings(tag, GK_FINAL_PICC_SETTINGS);
+        if (r < 0) {
+            debug_log("issue_tag: failed to change tag key settings");
+            goto abort;
+        }
+
+        // Enable random UID
+        r = mifare_desfire_set_configuration(tag, false, true);
+        if (r < 0) {
+            debug_log("issue_tag: failed to update tag configuration");
+            goto abort;
+        }
     }
-
-    MifareDESFireKey picc_master_key = mifare_desfire_aes_key_new(td->picc_master_key);
-    print_key("PICC Master Key", td->picc_master_key, r);
-
-    // Switch back to master application
-    r = mifare_desfire_select_application(tag, NULL);
-    if (r < 0) {
-        debug_log("issue_tag: failed to select master application");
-        PICC_ERR_LOG(tag);
-        goto abort;
-    }
-
-    // Authenticate to tag
-    r = mifare_desfire_authenticate(tag, 0, default_desfire_des_key);
-    if (r < 0) {
-        debug_log("issue_tag: failed to authenticate to tag");
-        PICC_ERR_LOG(tag);
-        goto abort;
-    }
-
-    // Change key settings to allow us to change the PICC master key
-    r = mifare_desfire_change_key_settings(tag, GK_INITIAL_PICC_SETTINGS);
-    if (r < 0) {
-        debug_log("issue_tag: failed to change tag key settings");
-        PICC_ERR_LOG(tag);
-        goto abort;
-    }
-
-    // TODO: Must save real tag UID or we won't be able to re-derive PICC master key
-
-//    // Change PICC master key
-//    r = mifare_desfire_change_key(tag, 0, picc_master_key, default_desfire_key);
-//    if (r < 0) {
-//        debug_log("issue_tag: failed to change PICC master key");
-//        goto abort;
-//    }
-//
-//    // Re-authenticate to target
-//    r = mifare_desfire_authenticate(tag, 0, picc_master_key);
-//    if (r < 0) {
-//        debug_log("issue_tag: failed to re-authenticate to tag");
-//        goto abort;
-//    }
-//
-//    // Apply the final key settings
-//    r = mifare_desfire_change_key_settings(tag, GK_FINAL_PICC_SETTINGS);
-//    if (r < 0) {
-//        debug_log("issue_tag: failed to change tag key settings");
-//        goto abort;
-//    }
-//
-//    // Enable random UID
-//    r = mifare_desfire_set_configuration(tag, false, true);
-//    if (r < 0) {
-//        debug_log("issue_tag: failed to update tag configuration");
-//        goto abort;
-//    }
 
     retval = 0;
 
     abort:
     if (picc_master_key != NULL) mifare_desfire_key_free(picc_master_key);
-    mifare_desfire_key_free(default_desfire_des_key);
+    mifare_desfire_key_free(current_master_key);
     mifare_desfire_key_free(default_desfire_aes_key);
     if (connected) mifare_desfire_disconnect(tag);
     if (td != NULL) tag_data_free(td);

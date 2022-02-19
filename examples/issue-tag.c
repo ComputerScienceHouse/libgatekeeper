@@ -75,7 +75,7 @@ int main(int argc, const char *argv[]) {
             goto abort_tags;
         }
 
-        retval = issue_tag(tag, "cdfc36ef1b3d87a81a4114cb75459e27", realms, 1);
+        retval = issue_tag(tag, "cdfc36ef1b3d87a81a4114cb75459e27", 0, realms, 1);
         if(retval != 0) {
             warnx("Failed to issue tag.");
             retval = EXIT_FAILURE;
